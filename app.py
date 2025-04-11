@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import PyPDF2
 from io import BytesIO
+import unicodedata
 
 # Inicializa o Flask
 app = Flask(__name__)
@@ -26,8 +27,15 @@ CHATBASE_HEADERS = {
     "Content-Type": "application/json"
 }
 
+# Função para normalizar texto (remove caracteres inválidos)
+def normalize_text(text):
+    # Normaliza o texto para remover caracteres especiais e codificações inválidas
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    # Remove caracteres de controle
+    return ''.join(char for char in text if char.isprintable())
+
 # Função para dividir texto longo em partes menores
-def split_text(text, max_length=1000):
+def split_text(text, max_length=500):
     return [text[i:i + max_length] for i in range(0, len(text), max_length)]
 
 @app.route('/upload', methods=['POST'])
@@ -59,8 +67,11 @@ def upload_file():
     except Exception as e:
         return jsonify({"error": f"Erro ao processar o arquivo: {str(e)}"}), 400
 
+    # Normaliza o texto para remover caracteres inválidos
+    file_content = normalize_text(file_content)
+
     # Divide o texto em partes menores para evitar limites de tamanho
-    text_parts = split_text(file_content, max_length=1000)
+    text_parts = split_text(file_content, max_length=500)
     bot_message = ""
 
     # Envia cada parte do texto como uma mensagem para o Chatbase
