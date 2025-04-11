@@ -15,6 +15,10 @@ load_dotenv()
 CHATBASE_API_KEY = os.getenv("CHATBASE_API_KEY")
 CHATBASE_CHATBOT_ID = os.getenv("CHATBASE_CHATBOT_ID")
 
+# Verifica se as variáveis de ambiente estão definidas
+if not CHATBASE_API_KEY or not CHATBASE_CHATBOT_ID:
+    raise ValueError("CHATBASE_API_KEY ou CHATBASE_CHATBOT_ID não estão definidos nas variáveis de ambiente.")
+
 # Configurações da API do Chatbase
 CHATBASE_API_URL = "https://www.chatbase.co/api/v1/chat"
 CHATBASE_HEADERS = {
@@ -23,7 +27,7 @@ CHATBASE_HEADERS = {
 }
 
 # Função para dividir texto longo em partes menores
-def split_text(text, max_length=2000):
+def split_text(text, max_length=1000):
     return [text[i:i + max_length] for i in range(0, len(text), max_length)]
 
 @app.route('/upload', methods=['POST'])
@@ -56,19 +60,20 @@ def upload_file():
         return jsonify({"error": f"Erro ao processar o arquivo: {str(e)}"}), 400
 
     # Divide o texto em partes menores para evitar limites de tamanho
-    text_parts = split_text(file_content, max_length=2000)
+    text_parts = split_text(file_content, max_length=1000)
     bot_message = ""
 
     # Envia cada parte do texto como uma mensagem para o Chatbase
     for part in text_parts:
+        payload = {
+            "chatbotId": CHATBASE_CHATBOT_ID,
+            "messages": [
+                {"role": "user", "content": f"Analise o seguinte documento (parte):\n\n{part}"}
+            ],
+            "conversationId": request.form.get('conversationId', None)  # Mantém o contexto da conversa
+        }
         try:
-            response = requests.post(CHATBASE_API_URL, headers=CHATBASE_HEADERS, json={
-                "chatbotId": CHATBASE_CHATBOT_ID,
-                "messages": [
-                    {"role": "user", "content": f"Analise o seguinte documento (parte):\n\n{part}"}
-                ],
-                "conversationId": request.form.get('conversationId', None)  # Mantém o contexto da conversa
-            })
+            response = requests.post(CHATBASE_API_URL, headers=CHATBASE_HEADERS, json=payload)
             response.raise_for_status()
             data = response.json()
             bot_message += data["response"] + "\n"
@@ -76,6 +81,7 @@ def upload_file():
             error_message = f"Erro ao se comunicar com o Chatbase: {str(e)}"
             if response:
                 error_message += f"\nResposta do Chatbase: {response.text}"
+                error_message += f"\nPayload enviado: {payload}"
             return jsonify({"error": error_message}), 500
 
     return jsonify({"message": bot_message.strip()})
