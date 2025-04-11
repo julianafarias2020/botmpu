@@ -22,6 +22,10 @@ CHATBASE_HEADERS = {
     "Content-Type": "application/json"
 }
 
+# Função para dividir texto longo em partes menores
+def split_text(text, max_length=2000):
+    return [text[i:i + max_length] for i in range(0, len(text), max_length)]
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -51,22 +55,30 @@ def upload_file():
     except Exception as e:
         return jsonify({"error": f"Erro ao processar o arquivo: {str(e)}"}), 400
 
-    # Envia o conteúdo do arquivo como uma mensagem para o Chatbase
-    try:
-        response = requests.post(CHATBASE_API_URL, headers=CHATBASE_HEADERS, json={
-            "chatbotId": CHATBASE_CHATBOT_ID,
-            "messages": [
-                {"role": "user", "content": f"Analise o seguinte documento:\n\n{file_content}"}
-            ],
-            "conversationId": request.form.get('conversationId', None)  # Mantém o contexto da conversa
-        })
-        response.raise_for_status()
-        data = response.json()
-        bot_message = data["response"]
+    # Divide o texto em partes menores para evitar limites de tamanho
+    text_parts = split_text(file_content, max_length=2000)
+    bot_message = ""
 
-        return jsonify({"message": bot_message})
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Erro ao se comunicar com o Chatbase: {str(e)}"}), 500
+    # Envia cada parte do texto como uma mensagem para o Chatbase
+    for part in text_parts:
+        try:
+            response = requests.post(CHATBASE_API_URL, headers=CHATBASE_HEADERS, json={
+                "chatbotId": CHATBASE_CHATBOT_ID,
+                "messages": [
+                    {"role": "user", "content": f"Analise o seguinte documento (parte):\n\n{part}"}
+                ],
+                "conversationId": request.form.get('conversationId', None)  # Mantém o contexto da conversa
+            })
+            response.raise_for_status()
+            data = response.json()
+            bot_message += data["response"] + "\n"
+        except requests.exceptions.RequestException as e:
+            error_message = f"Erro ao se comunicar com o Chatbase: {str(e)}"
+            if response:
+                error_message += f"\nResposta do Chatbase: {response.text}"
+            return jsonify({"error": error_message}), 500
+
+    return jsonify({"message": bot_message.strip()})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
